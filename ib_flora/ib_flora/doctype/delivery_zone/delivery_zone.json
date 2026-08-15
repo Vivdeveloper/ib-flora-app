@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:zone_name",
+ "creation": "2026-08-14 22:37:21.072905",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "zone_name",
+  "territory",
+  "column_break_zone",
+  "is_active",
+  "same_day_available",
+  "pincodes_section",
+  "pincodes",
+  "delivery_rules_section",
+  "shipping_rule",
+  "cutoff_time",
+  "column_break_delivery_rules",
+  "delivery_start",
+  "delivery_end"
+ ],
+ "fields": [
+  {
+   "fieldname": "zone_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Zone Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "territory",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Territory",
+   "options": "Territory",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_zone",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Is Active"
+  },
+  {
+   "default": "0",
+   "fieldname": "same_day_available",
+   "fieldtype": "Check",
+   "label": "Same Day Delivery Available"
+  },
+  {
+   "fieldname": "pincodes_section",
+   "fieldtype": "Section Break",
+   "label": "Coverage"
+  },
+  {
+   "description": "Comma-separated list of pincodes served within this zone",
+   "fieldname": "pincodes",
+   "fieldtype": "Small Text",
+   "label": "Pincodes Covered"
+  },
+  {
+   "fieldname": "delivery_rules_section",
+   "fieldtype": "Section Break",
+   "label": "Delivery Rules"
+  },
+  {
+   "fieldname": "shipping_rule",
+   "fieldtype": "Link",
+   "label": "Shipping Rule",
+   "options": "Shipping Rule"
+  },
+  {
+   "description": "Orders placed before this time are eligible for same-day delivery",
+   "fieldname": "cutoff_time",
+   "fieldtype": "Time",
+   "label": "Cutoff Time"
+  },
+  {
+   "fieldname": "column_break_delivery_rules",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_start",
+   "fieldtype": "Time",
+   "label": "Delivery Window Start"
+  },
+  {
+   "fieldname": "delivery_end",
+   "fieldtype": "Time",
+   "label": "Delivery Window End"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-14 22:38:00.150510",
+ "modified_by": "Administrator",
+ "module": "IB Flora",
+ "name": "Delivery Zone",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
