@@ -150,6 +150,25 @@ def get_item_details(item_codes):
 
 
 @frappe.whitelist(allow_guest=True)
+def get_item_creation_dates(item_codes):
+	"""Batch creation-timestamp lookup for the product grid's "Newest" sort.
+
+	webshop.webshop.product_data_engine.query's field list is fixed and
+	doesn't include `creation`, so this fills that one gap rather than
+	reimplementing its whole query (filters, ranking, pagination) just to
+	add one field."""
+	if isinstance(item_codes, str):
+		item_codes = frappe.parse_json(item_codes)
+
+	rows = frappe.get_all(
+		"Website Item",
+		filters={"item_code": ["in", item_codes]},
+		fields=["item_code", "creation"],
+	)
+	return {row.item_code: str(row.creation) for row in rows}
+
+
+@frappe.whitelist(allow_guest=True)
 def get_item_ratings(website_items):
 	"""Average rating + review count per Website Item, from the standard
 	Item Review doctype. Batched (one query for the whole product grid)
@@ -231,20 +250,36 @@ def create_payment_request(sales_order):
 	output as JSON for the SPA.
 
 	erpnext.accounts.doctype.payment_request.payment_request.make_payment_request
-	already does the real work: it creates + submits the Payment Request,
-	resolves the default Razorpay Payment Gateway Account, and (in
-	PaymentRequest.before_submit -> set_payment_request_url) calls
-	RazorpaySettings.get_payment_url(), which creates the actual Razorpay
-	order via their API and logs an Integration Request holding the
-	checkout.js params (order_id, amount, currency, key, prefill...).
+	does most of the real work: it creates + submits the Payment Request and
+	resolves the default Razorpay Payment Gateway Account.
 
-	The only gap: that whole flow ends by returning a URL to Payments' own
-	server-rendered page (payments/templates/pages/razorpay_checkout.py),
-	meant for a full-page redirect -- there's no whitelisted method that
-	hands back those same checkout.js params as JSON. This storefront is a
-	headless SPA that opens Razorpay's checkout.js itself (see
-	CheckoutPayment.tsx), so this unpacks the same Integration Request that
-	Jinja page would have read from, instead of redirecting to it.
+	Two gaps needed a small amount of glue code, both still calling only
+	Payments' own existing controller methods (no Razorpay SDK/API calls of
+	our own):
+
+	1. PaymentRequest.get_payment_url() -- called automatically from
+	   before_submit() during the make_payment_request() above -- always
+	   passes `order_id=self.name` (the Payment Request's own name) into
+	   RazorpaySettings.get_payment_url(). That method only calls
+	   create_order() (which actually hits Razorpay's Orders API) when
+	   `order_id` is falsy: `if not kwargs.get("order_id"): create_order(...)`.
+	   Since PaymentRequest always supplies a truthy one, create_order() is
+	   silently skipped -- checkout.js ends up handed a Payment Request name
+	   as "order_id" instead of a real Razorpay order, which Razorpay's
+	   hosted checkout can't find and simply fails to render. This appears to
+	   be a genuine bug in this order_id convention as it interacts with
+	   Razorpay specifically (harmless for gateways that treat order_id as an
+	   arbitrary echoed merchant reference). Worked around by calling
+	   RazorpaySettings.get_payment_url() ourselves with the same kwargs
+	   PaymentRequest.get_payment_url() builds, minus that one field, so it
+	   actually creates a real order.
+	2. That whole flow ends by returning a URL to Payments' own
+	   server-rendered page (payments/templates/pages/razorpay_checkout.py),
+	   meant for a full-page redirect -- there's no whitelisted method that
+	   hands back those same checkout.js params as JSON. This storefront is a
+	   headless SPA that opens Razorpay's checkout.js itself (see
+	   CheckoutPayment.tsx), so this unpacks the same Integration Request
+	   that Jinja page would have read from, instead of redirecting to it.
 	"""
 	from erpnext.accounts.doctype.payment_request.payment_request import make_payment_request
 
@@ -275,19 +310,12 @@ def create_payment_request(sales_order):
 			mute_email=1,
 		)
 
-	token = None
-	if payment_request.payment_url:
-		token = parse_qs(urlparse(payment_request.payment_url).query).get("token", [None])[0]
-
-	if not token:
-		frappe.throw(_("Could not start Razorpay checkout for this order."))
-
-	integration_request = frappe.get_doc("Integration Request", token)
+	integration_request = _razorpay_order_integration_request(payment_request)
 	payment_details = frappe.parse_json(integration_request.data)
 
 	return {
 		"payment_request": payment_request.name,
-		"token": token,
+		"token": integration_request.name,
 		"key": frappe.db.get_single_value("Razorpay Settings", "api_key"),
 		"order_id": payment_details.get("order_id"),
 		"amount": cint(flt(payment_details.get("amount")) * 100),
@@ -301,3 +329,45 @@ def create_payment_request(sales_order):
 			"email": payment_details.get("payer_email"),
 		},
 	}
+
+
+def _razorpay_order_integration_request(payment_request):
+	"""Return the Integration Request holding a *real* Razorpay order for this
+	Payment Request, creating one via RazorpaySettings.get_payment_url() if
+	none exists yet. See create_payment_request()'s docstring for why this
+	can't just read payment_request.payment_url directly."""
+	existing = frappe.get_all(
+		"Integration Request",
+		filters={
+			"reference_doctype": "Payment Request",
+			"reference_docname": payment_request.name,
+			"integration_request_service": "Razorpay",
+		},
+		fields=["name", "data"],
+		order_by="creation desc",
+	)
+	for row in existing:
+		if frappe.parse_json(row.data).get("order_id", "").startswith("order_"):
+			return frappe.get_doc("Integration Request", row.name)
+
+	ref = frappe.db.get_value(
+		"Sales Order", payment_request.reference_name, ["company", "customer_name"], as_dict=True
+	)
+	controller = frappe.get_doc("Razorpay Settings")
+	controller.validate_transaction_currency(payment_request.currency)
+
+	payment_url = controller.get_payment_url(
+		amount=flt(payment_request.grand_total, payment_request.precision("grand_total")),
+		title=ref.company,
+		description=payment_request.subject,
+		reference_doctype="Payment Request",
+		reference_docname=payment_request.name,
+		payer_email=payment_request.email_to or frappe.session.user,
+		payer_name=ref.customer_name,
+		currency=payment_request.currency,
+		payment_gateway=payment_request.payment_gateway,
+	)
+	token = parse_qs(urlparse(payment_url).query).get("token", [None])[0]
+	if not token:
+		frappe.throw(_("Could not start Razorpay checkout for this order."))
+	return frappe.get_doc("Integration Request", token)

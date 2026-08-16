@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { Loader2, ShieldCheck, XCircle } from 'lucide-react'
+import { CreditCard, Loader2, ShieldCheck, XCircle } from 'lucide-react'
 import Header from '../components/Header'
 import {
   createPaymentRequest,
@@ -49,9 +49,8 @@ export default function CheckoutPayment() {
 
   const [params, setParams] = useState<RazorpayCheckoutParams | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [dismissed, setDismissed] = useState(false)
-  const opening = useRef(false)
-  const started = useRef(false)
+  const [confirming, setConfirming] = useState(false)
+  const preparePromiseRef = useRef<Promise<[RazorpayCheckoutParams, void]> | null>(null)
 
   useEffect(() => {
     if (!salesOrder) {
@@ -59,63 +58,65 @@ export default function CheckoutPayment() {
       return
     }
 
-    // React StrictMode (dev only) invokes effects twice on mount -- without
-    // this guard that fires createPaymentRequest twice, and the backend's
-    // idempotency check on the second call surfaces as a spurious error.
-    if (started.current) return
-    started.current = true
-
     let cancelled = false
 
-    async function start() {
-      try {
-        const [checkoutParams] = await Promise.all([
-          createPaymentRequest(salesOrder as string),
-          loadRazorpayScript(),
-        ])
-        if (cancelled) return
-        setParams(checkoutParams)
-        openRazorpay(checkoutParams)
-      } catch (err) {
-        if (!cancelled) setError(extractErrorMessage(err))
-      }
+    // React StrictMode (dev only) invokes effects twice on mount. Memoizing
+    // the in-flight promise on a ref -- instead of a boolean "already
+    // started" flag -- means a second invocation reuses the same request
+    // (so createPaymentRequest still only fires once against a backend
+    // that isn't safely idempotent for that) while still registering its
+    // own `cancelled`-guarded handler, so the surviving mount actually gets
+    // to call setParams when the shared promise resolves. A boolean guard
+    // that blocks re-entry outright breaks this: the first mount's cleanup
+    // marks *its own* `cancelled` true before the request resolves, and if
+    // that's the only invocation allowed to run, nothing ever updates state.
+    if (!preparePromiseRef.current) {
+      preparePromiseRef.current = Promise.all([
+        createPaymentRequest(salesOrder),
+        loadRazorpayScript(),
+      ])
     }
 
-    start()
+    preparePromiseRef.current
+      .then(([checkoutParams]) => {
+        if (!cancelled) setParams(checkoutParams)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(extractErrorMessage(err))
+      })
+
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [salesOrder])
 
-  function openRazorpay(checkoutParams: RazorpayCheckoutParams) {
-    if (opening.current) return
-    opening.current = true
-    setDismissed(false)
+  // Fetching params happens in the background as soon as the page loads, but
+  // rzp.open() only ever runs inside this direct click handler -- some
+  // browsers gate the iframe's "payment" permission on transient user
+  // activation, so opening it from an async callback with no live user
+  // gesture can silently fail to render.
+  function handlePayNow() {
+    if (!params) return
+    setError(null)
 
     const options = {
-      key: checkoutParams.key,
-      amount: checkoutParams.amount,
-      currency: checkoutParams.currency,
-      name: checkoutParams.name,
-      description: checkoutParams.description,
-      order_id: checkoutParams.order_id,
-      prefill: checkoutParams.prefill,
+      key: params.key,
+      amount: params.amount,
+      currency: params.currency,
+      name: params.name,
+      description: params.description,
+      order_id: params.order_id,
+      prefill: params.prefill,
       handler: async (response: RazorpaySuccessResponse) => {
+        setConfirming(true)
         try {
-          await confirmRazorpayPayment(checkoutParams, response)
+          await confirmRazorpayPayment(params, response)
           navigate(`/checkout/complete?so=${encodeURIComponent(salesOrder as string)}`)
         } catch (err) {
           setError(extractErrorMessage(err))
         } finally {
-          opening.current = false
+          setConfirming(false)
         }
-      },
-      modal: {
-        ondismiss: () => {
-          opening.current = false
-          setDismissed(true)
-        },
       },
     }
 
@@ -143,25 +144,24 @@ export default function CheckoutPayment() {
               <ShieldCheck className="h-7 w-7" strokeWidth={1.75} aria-hidden />
             </span>
             <h1 className="mt-4 text-xl font-semibold text-slate-900">
-              {params ? 'Complete your payment' : 'Preparing secure payment...'}
+              {params ? 'Ready to pay' : 'Preparing secure payment...'}
             </h1>
             {params && (
               <p className="mt-2 text-sm text-slate-500">
                 {formatCurrency(params.amount / 100)} for order {salesOrder}
               </p>
             )}
-            <p className="mt-1 text-xs text-slate-400">Razorpay's secure checkout will open automatically.</p>
 
-            {!params && (
-              <Loader2 className="mt-6 h-6 w-6 animate-spin text-emerald-700" aria-hidden />
-            )}
+            {!params && <Loader2 className="mt-6 h-6 w-6 animate-spin text-emerald-700" aria-hidden />}
 
-            {dismissed && params && (
+            {params && (
               <button
-                onClick={() => openRazorpay(params)}
-                className="mt-6 rounded-xl bg-emerald-800 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
+                onClick={handlePayNow}
+                disabled={confirming}
+                className="mt-6 flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Reopen Payment
+                <CreditCard className="h-4 w-4" strokeWidth={2} aria-hidden />
+                {confirming ? 'Confirming payment...' : 'Pay Now with Razorpay'}
               </button>
             )}
           </>

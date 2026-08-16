@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { Star } from 'lucide-react'
+import { Star, Flower2, Leaf } from 'lucide-react'
 import Header from '../components/Header'
 import ReviewModal from '../components/ReviewModal'
 import FeatureBadges from '../components/products/FeatureBadges'
 import CategoryChips from '../components/products/CategoryChips'
-import PetalAccents from '../components/products/PetalAccents'
 import {
   getWebsiteItems,
   getCategorySummary,
   getItemRatings,
+  getItemCreationDates,
   type WebsiteItem,
   type CategorySummary,
   type ItemRating,
@@ -21,7 +21,7 @@ import { CATEGORIES, DEFAULT_TAGLINE, isPerishable, type Category } from '../lib
 
 const UOM_LABEL: Record<string, string> = { Nos: 'piece', Gram: 'gram', Kg: 'kg' }
 
-type SortKey = 'popular' | 'price-asc' | 'price-desc' | 'name-asc'
+type SortKey = 'popular' | 'price-asc' | 'price-desc' | 'newest'
 type ViewMode = 'grid' | 'list'
 
 const FAVORITES_KEY = 'ib-flora-favorites'
@@ -42,6 +42,7 @@ export default function Products() {
   const [items, setItems] = useState<WebsiteItem[]>([])
   const [uoms, setUoms] = useState<Record<string, string>>({})
   const [ratings, setRatings] = useState<Record<string, ItemRating>>({})
+  const [creations, setCreations] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -80,6 +81,7 @@ export default function Products() {
         const details = await getItemDetails(data.map((i) => i.item_code))
         setUoms(Object.fromEntries(Object.entries(details).map(([code, d]) => [code, d.stock_uom ?? ''])))
         setRatings(await getItemRatings(data.map((i) => i.name)))
+        setCreations(await getItemCreationDates(data.map((i) => i.item_code)))
       })
       .catch(() => setError('Could not load products.'))
       .finally(() => setLoading(false))
@@ -113,11 +115,13 @@ export default function Products() {
 
     if (sort === 'price-asc') result.sort((a, b) => (a.price_list_rate ?? 0) - (b.price_list_rate ?? 0))
     else if (sort === 'price-desc') result.sort((a, b) => (b.price_list_rate ?? 0) - (a.price_list_rate ?? 0))
-    else if (sort === 'name-asc') result.sort((a, b) => a.web_item_name.localeCompare(b.web_item_name))
+    else if (sort === 'newest') {
+      result.sort((a, b) => (creations[b.item_code] ?? '').localeCompare(creations[a.item_code] ?? ''))
+    }
     // 'popular' -- keep the order the backend already ranked
 
     return result
-  }, [items, sort, priceMin, priceMax])
+  }, [items, sort, priceMin, priceMax, creations])
 
   const heroImage = category ? heroImages[category.name] : heroImages['Puja Flowers']
 
@@ -126,10 +130,8 @@ export default function Products() {
       <Header />
 
       {/* Category hero */}
-      <div className="mx-auto w-full max-w-[1600px] px-3 pt-3 lg:px-6">
+      <div className="mx-auto w-full max-w-[1920px] px-3 pt-3 lg:px-6">
         <div className="relative overflow-hidden rounded-3xl border border-rose-100/60 bg-gradient-to-br from-rose-50 via-rose-50/80 to-amber-50/40 shadow-sm">
-          <PetalAccents />
-
           <div className="relative flex flex-col md:flex-row md:items-stretch">
             <div className="flex-1 px-6 py-7 sm:px-8 lg:px-10 lg:py-9">
               <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
@@ -144,21 +146,42 @@ export default function Products() {
               <CategoryChips categories={CATEGORIES} active={categoryName} onSelect={setCategory} className="mt-5" />
             </div>
 
-            {heroImage && (
-              <div className="relative order-first h-48 w-full shrink-0 overflow-hidden sm:h-64 md:order-none md:h-auto md:w-[42%] lg:w-[38%]">
+            <div
+              aria-hidden
+              className="relative order-first flex h-48 shrink-0 items-center justify-center self-center overflow-hidden sm:h-60 md:order-none md:h-72 md:w-[36%] lg:h-80 lg:w-[32%]"
+            >
+              {!heroImage && (
+                <div className="absolute inset-0 bg-gradient-to-br from-rose-100/70 via-amber-50/60 to-emerald-50/50" />
+              )}
+              {heroImage ? (
                 <img
                   src={heroImage}
                   alt=""
-                  className="absolute inset-0 h-full w-full object-contain p-4 md:p-6"
+                  className="relative h-full w-full object-cover"
+                  style={{
+                    maskImage: 'linear-gradient(to right, transparent, black 62%)',
+                    WebkitMaskImage: 'linear-gradient(to right, transparent, black 62%)',
+                  }}
                 />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-rose-50/90 via-transparent to-transparent md:bg-gradient-to-r" />
-              </div>
-            )}
+              ) : (
+                <>
+                  <Flower2 className="relative h-16 w-16 text-rose-300 sm:h-20 sm:w-20" strokeWidth={1} />
+                  <Leaf
+                    className="absolute left-[22%] top-[24%] h-6 w-6 text-emerald-300 sm:h-7 sm:w-7"
+                    strokeWidth={1.5}
+                  />
+                  <Flower2
+                    className="absolute bottom-[20%] right-[24%] h-7 w-7 text-amber-300 sm:h-8 sm:w-8"
+                    strokeWidth={1.5}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      <main className="mx-auto w-full max-w-[1600px] px-6 py-6 lg:px-10">
+      <main className="mx-auto w-full max-w-[1920px] px-6 py-6 lg:px-10">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -171,7 +194,7 @@ export default function Products() {
               <option value="popular">Popular</option>
               <option value="price-asc">Price: Low to High</option>
               <option value="price-desc">Price: High to Low</option>
-              <option value="name-asc">Name: A-Z</option>
+              <option value="newest">Newest</option>
             </select>
           </label>
 
@@ -379,7 +402,7 @@ export default function Products() {
       </main>
 
       <div className="mt-4 bg-emerald-50/60 px-6 py-8 lg:px-10">
-        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-2 gap-6 sm:grid-cols-4">
+        <div className="mx-auto grid w-full max-w-[1920px] grid-cols-2 gap-6 sm:grid-cols-4">
           {[
             { icon: '🌿', title: '100% Fresh', subtitle: 'Handpicked with care' },
             { icon: '🚚', title: 'On-Time Delivery', subtitle: 'Right to your doorstep' },

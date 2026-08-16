@@ -169,7 +169,13 @@ export default function Cart() {
       <Header />
 
       <main className="mx-auto w-full max-w-6xl px-6 py-6 lg:px-10">
-        <Breadcrumb current="Review Cart" />
+        <Breadcrumb
+          current="Review Cart"
+          crumbs={[
+            { label: 'Home', to: '/' },
+            { label: 'Cart', to: '/cart' },
+          ]}
+        />
 
         <div>
           <div className="relative mt-4">
@@ -187,12 +193,10 @@ export default function Cart() {
             <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-6">
               <p className="font-medium text-amber-900">You need to be logged in to use the cart.</p>
               <p className="mt-1 text-sm text-amber-800">
-                This storefront doesn't have its own customer login yet — it uses the same session as
-                Desk. Log in at{' '}
-                <a href="/app/login" className="underline">
-                  /app/login
-                </a>{' '}
-                in this browser, then come back here.
+                <Link to="/login?redirect=/cart" className="underline">
+                  Log in or create an account
+                </Link>{' '}
+                to continue.
               </p>
             </div>
           )}

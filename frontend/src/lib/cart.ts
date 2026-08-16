@@ -188,17 +188,22 @@ export async function selectShippingAddress(addressName: string): Promise<void> 
 // ---- Coupon codes (standard Coupon Code / Pricing Rule validation) ----
 
 export function extractErrorMessage(err: unknown): string {
-  const messagesRaw = (err as { response?: { data?: { _server_messages?: string } } })?.response?.data
-    ?._server_messages
+  const data = (err as { response?: { data?: { _server_messages?: string; message?: unknown } } })?.response
+    ?.data
+  const messagesRaw = data?._server_messages
   if (messagesRaw) {
     try {
       const messages = JSON.parse(messagesRaw) as string[]
       const first = JSON.parse(messages[0])
       if (first?.message) return first.message as string
     } catch {
-      // fall through to generic message below
+      // fall through below
     }
   }
+  // frappe.auth.LoginManager.fail() (bad username/password) sets a plain
+  // top-level "message" instead of going through frappe.throw/msgprint, so
+  // it never populates _server_messages -- fall back to that string.
+  if (typeof data?.message === 'string') return data.message
   return 'Something went wrong. Please try again.'
 }
 

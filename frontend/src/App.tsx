@@ -7,6 +7,10 @@ import Deliveries from './pages/Deliveries'
 import Cart from './pages/Cart'
 import CheckoutPayment from './pages/CheckoutPayment'
 import CheckoutComplete from './pages/CheckoutComplete'
+import Account from './pages/Account'
+import Transactions from './pages/Transactions'
+import Support from './pages/Support'
+import Login from './pages/Login'
 
 export default function App() {
   return (
@@ -20,6 +24,10 @@ export default function App() {
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout/payment" element={<CheckoutPayment />} />
           <Route path="/checkout/complete" element={<CheckoutComplete />} />
+          <Route path="/account" element={<Account />} />
+          <Route path="/transactions" element={<Transactions />} />
+          <Route path="/support" element={<Support />} />
+          <Route path="/login" element={<Login />} />
         </Routes>
       </BrowserRouter>
     </CartProvider>

@@ -130,6 +130,17 @@ export async function getItemRatings(websiteItemNames: string[]): Promise<Record
   return data.message
 }
 
+// Creation timestamps for the "Newest" sort option -- webshop's product
+// listing endpoint doesn't return this field, so it's fetched separately;
+// see ib_flora/api.py:get_item_creation_dates.
+export async function getItemCreationDates(itemCodes: string[]): Promise<Record<string, string>> {
+  if (itemCodes.length === 0) return {}
+  const { data } = await api.post('/method/ib_flora.api.get_item_creation_dates', {
+    item_codes: itemCodes,
+  })
+  return data.message
+}
+
 // Standard webshop review submission (webshop.webshop.doctype.item_review.item_review.add_item_review).
 // Requires login (same as cart). `stars` is 1-5; the doctype's Rating field
 // itself stores a 0-1 fraction. Silently no-ops server-side if this user has

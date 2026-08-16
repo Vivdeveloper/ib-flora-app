@@ -72,6 +72,7 @@ export default function Home() {
   const [summary, setSummary] = useState<Record<string, CategorySummary>>({})
   const [loaded, setLoaded] = useState(false)
   const [deskSlides, setDeskSlides] = useState<Record<number, SlideshowItem>>({})
+  const [slidesReady, setSlidesReady] = useState(false)
 
   useEffect(() => {
     getCategorySummary()
@@ -81,11 +82,18 @@ export default function Home() {
       .catch(() => {})
       .finally(() => setLoaded(true))
 
+    // deskSlides starts empty, so rendering the Carousel immediately means
+    // every refresh flashes the hardcoded SLIDES_BASE fallback art first,
+    // then swaps to the real Desk-uploaded photos once this resolves.
+    // Holding the Carousel back behind slidesReady (skeleton in its place,
+    // matching its own height breakpoints so nothing jumps) trades that
+    // flash-then-swap for a brief, smooth loading state instead.
     getHomepageSlideshow()
       .then((rows) => {
         setDeskSlides(Object.fromEntries(rows.filter((r) => r.image).map((r) => [r.idx - 1, r])))
       })
       .catch(() => {})
+      .finally(() => setSlidesReady(true))
   }, [])
 
   const slides = useMemo(
@@ -109,8 +117,12 @@ export default function Home() {
     <div className="min-h-screen w-full bg-white">
       <Header />
 
-      <main className="mx-auto w-full max-w-[1600px] pb-8">
-        <Carousel slides={slides} />
+      <main className="mx-auto w-full max-w-[1920px] pb-8">
+        {slidesReady ? (
+          <Carousel slides={slides} />
+        ) : (
+          <div className="h-[240px] w-full animate-pulse bg-slate-100 sm:h-[280px] md:h-[330px] lg:h-[380px] xl:h-[420px] 2xl:h-[460px]" />
+        )}
 
         <div className="mt-10 flex flex-col gap-3 px-6 sm:flex-row sm:items-end sm:justify-between lg:px-10">
           <div>

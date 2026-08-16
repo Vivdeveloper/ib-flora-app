@@ -43,7 +43,7 @@ export default function Header() {
   return (
     <Tooltip.Provider delayDuration={200} skipDelayDuration={300}>
       <header className="sticky top-0 z-20 bg-gradient-to-b from-rose-50/70 to-transparent px-3 pb-2 pt-2 lg:px-6">
-        <div className="relative mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-y-2 gap-x-3 rounded-2xl border border-rose-100 bg-white/95 px-4 py-2 shadow-sm sm:gap-x-4 sm:px-5 sm:py-2.5">
+        <div className="relative mx-auto flex w-full max-w-[1920px] flex-wrap items-center justify-between gap-y-2 gap-x-3 rounded-2xl border border-rose-100 bg-white/95 px-4 py-2 shadow-sm sm:gap-x-4 sm:px-5 sm:py-2.5">
           <BrandSection />
 
           <DeliveryInfo

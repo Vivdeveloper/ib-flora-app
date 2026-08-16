@@ -77,7 +77,7 @@ export default function Carousel({ slides }: { slides: Slide[] }) {
                   src={slide.image}
                   alt={slide.deskHeading || slide.headingMain}
                   draggable={false}
-                  className="h-full w-full select-none object-contain"
+                  className="h-full w-full select-none object-cover"
                 />
               </Link>
               {(slide.deskHeading || slide.deskDescription) && (

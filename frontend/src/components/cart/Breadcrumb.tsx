@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 
-export default function Breadcrumb({ current }: { current: string }) {
-  const crumbs = [
-    { label: 'Home', to: '/' },
-    { label: 'Cart', to: '/cart' },
-  ]
+interface Crumb {
+  label: string
+  to: string
+}
 
+const DEFAULT_CRUMBS: Crumb[] = [{ label: 'Home', to: '/' }]
+
+export default function Breadcrumb({ current, crumbs = DEFAULT_CRUMBS }: { current: string; crumbs?: Crumb[] }) {
   return (
     <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm text-slate-500">
       {crumbs.map((crumb) => (
