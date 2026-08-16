@@ -1,6 +1,9 @@
+from urllib.parse import parse_qs, urlparse
+
 import frappe
 import frappe.sessions
-from frappe.utils import get_time, now_datetime
+from frappe import _
+from frappe.utils import cint, flt, get_time, now_datetime
 
 
 @frappe.whitelist(allow_guest=True)
@@ -218,4 +221,83 @@ def check_delivery_zone(pincode):
 		"cutoff_time": str(zone.cutoff_time) if zone.cutoff_time else None,
 		"delivery_start": str(zone.delivery_start) if zone.delivery_start else None,
 		"delivery_end": str(zone.delivery_end) if zone.delivery_end else None,
+	}
+
+
+@frappe.whitelist()
+def create_payment_request(sales_order):
+	"""Start a Razorpay checkout for a Sales Order, entirely via the standard
+	Payment Request -> Payments app machinery -- this just repackages its
+	output as JSON for the SPA.
+
+	erpnext.accounts.doctype.payment_request.payment_request.make_payment_request
+	already does the real work: it creates + submits the Payment Request,
+	resolves the default Razorpay Payment Gateway Account, and (in
+	PaymentRequest.before_submit -> set_payment_request_url) calls
+	RazorpaySettings.get_payment_url(), which creates the actual Razorpay
+	order via their API and logs an Integration Request holding the
+	checkout.js params (order_id, amount, currency, key, prefill...).
+
+	The only gap: that whole flow ends by returning a URL to Payments' own
+	server-rendered page (payments/templates/pages/razorpay_checkout.py),
+	meant for a full-page redirect -- there's no whitelisted method that
+	hands back those same checkout.js params as JSON. This storefront is a
+	headless SPA that opens Razorpay's checkout.js itself (see
+	CheckoutPayment.tsx), so this unpacks the same Integration Request that
+	Jinja page would have read from, instead of redirecting to it.
+	"""
+	from erpnext.accounts.doctype.payment_request.payment_request import make_payment_request
+
+	# Revisiting this page (a reload, a dismissed Razorpay modal, React
+	# StrictMode's double-effect in dev) must not create a second Payment
+	# Request -- make_payment_request() itself throws "Payment Request is
+	# already created" if one's already outstanding, so reuse it instead of
+	# treating that as an error.
+	existing_name = frappe.db.get_value(
+		"Payment Request",
+		{
+			"reference_doctype": "Sales Order",
+			"reference_name": sales_order,
+			"docstatus": 1,
+			"status": ["in", ["Draft", "Requested", "Initiated"]],
+		},
+		"name",
+	)
+
+	if existing_name:
+		payment_request = frappe.get_doc("Payment Request", existing_name)
+	else:
+		payment_request = make_payment_request(
+			dt="Sales Order",
+			dn=sales_order,
+			submit_doc=1,
+			return_doc=1,
+			mute_email=1,
+		)
+
+	token = None
+	if payment_request.payment_url:
+		token = parse_qs(urlparse(payment_request.payment_url).query).get("token", [None])[0]
+
+	if not token:
+		frappe.throw(_("Could not start Razorpay checkout for this order."))
+
+	integration_request = frappe.get_doc("Integration Request", token)
+	payment_details = frappe.parse_json(integration_request.data)
+
+	return {
+		"payment_request": payment_request.name,
+		"token": token,
+		"key": frappe.db.get_single_value("Razorpay Settings", "api_key"),
+		"order_id": payment_details.get("order_id"),
+		"amount": cint(flt(payment_details.get("amount")) * 100),
+		"currency": payment_details.get("currency"),
+		"name": payment_details.get("title"),
+		"description": payment_details.get("description"),
+		"reference_doctype": payment_details.get("reference_doctype"),
+		"reference_docname": payment_details.get("reference_docname"),
+		"prefill": {
+			"name": payment_details.get("payer_name"),
+			"email": payment_details.get("payer_email"),
+		},
 	}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { MapPin, Plus, Minus, Trash2, ChevronDown, Tag, Lock, Info, Flower2 } from 'lucide-react'
 import Header from '../components/Header'
 import IconTooltip from '../components/Tooltip'
@@ -16,6 +16,8 @@ import {
   applyCoupon,
   removeCoupon,
   setCartNotes,
+  placeOrder,
+  getAddressPincode,
   extractErrorMessage,
   type AddressOption,
 } from '../lib/cart'
@@ -23,9 +25,13 @@ import {
 const DEFAULT_PINCODE = '411057'
 
 export default function Cart() {
+  const navigate = useNavigate()
   const { cart, loading, loggedIn, refresh, setQty } = useCart()
 
   const [zone, setZone] = useState<DeliveryZoneCheck | null>(null)
+
+  const [checkingOut, setCheckingOut] = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   const [addresses, setAddresses] = useState<AddressOption[]>([])
   const [addressesLoading, setAddressesLoading] = useState(false)
@@ -127,6 +133,35 @@ export default function Cart() {
   async function handleRemoveCoupon() {
     await removeCoupon()
     await refresh()
+  }
+
+  async function handleCheckout() {
+    setCheckoutError(null)
+
+    if (!cart.shippingAddressName) {
+      setCheckoutError('Please select a delivery address before checkout.')
+      return
+    }
+
+    setCheckingOut(true)
+    try {
+      // Re-check the delivery zone against the address actually selected for
+      // this order, not the page's default estimate above -- addresses can
+      // be swapped right up until checkout.
+      const pincode = await getAddressPincode(cart.shippingAddressName)
+      const zoneCheck = pincode ? await checkDeliveryZone(pincode) : null
+      if (!zoneCheck?.zone_found || !zoneCheck.is_active) {
+        setCheckoutError("Sorry, we don't currently deliver to this address's pincode.")
+        return
+      }
+
+      const salesOrder = await placeOrder()
+      navigate(`/checkout/payment?so=${encodeURIComponent(salesOrder)}`)
+    } catch (err) {
+      setCheckoutError(extractErrorMessage(err))
+    } finally {
+      setCheckingOut(false)
+    }
   }
 
   return (
@@ -495,17 +530,20 @@ export default function Cart() {
                   )}
                 </div>
 
+                {checkoutError && (
+                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-center text-xs text-red-600">
+                    {checkoutError}
+                  </p>
+                )}
+
                 <button
-                  disabled
-                  title="Checkout requires payment setup — not built yet"
-                  className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-emerald-800/40 py-3 text-sm font-semibold text-white"
+                  onClick={handleCheckout}
+                  disabled={checkingOut}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Lock className="h-4 w-4" strokeWidth={2} aria-hidden />
-                  Proceed to Checkout
+                  {checkingOut ? 'Placing order...' : 'Proceed to Checkout'}
                 </button>
-                <p className="mt-1.5 text-center text-xs text-slate-400">
-                  Checkout is coming soon — payment setup is in progress.
-                </p>
               </div>
             </div>
           )}

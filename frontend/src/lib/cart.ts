@@ -218,3 +218,28 @@ export async function removeCoupon(): Promise<void> {
 export async function setCartNotes(notes: string): Promise<void> {
   await api.post('/method/ib_flora.api.set_cart_notes', { notes })
 }
+
+// ---- Checkout (standard Webshop cart -> Sales Order conversion) ----
+
+// webshop's own checkout endpoint: submits the cart Quotation and converts
+// it into a submitted Sales Order (webshop.webshop.shopping_cart.cart.place_order).
+// Returns the new Sales Order's name.
+export async function placeOrder(): Promise<string> {
+  const { data } = await api.post('/method/webshop.webshop.shopping_cart.cart.place_order')
+  return data.message
+}
+
+// Addresses returned by getShippingAddresses() only carry a formatted
+// display string, not a structured pincode -- fetch it straight off the
+// standard Address doctype so checkout can re-validate the delivery zone
+// for whichever address is actually selected (not a hardcoded default).
+export async function getAddressPincode(addressName: string): Promise<string | null> {
+  const { data } = await api.get('/method/frappe.client.get_value', {
+    params: {
+      doctype: 'Address',
+      fieldname: 'pincode',
+      filters: JSON.stringify({ name: addressName }),
+    },
+  })
+  return data.message?.pincode || null
+}

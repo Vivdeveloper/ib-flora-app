@@ -5,6 +5,8 @@ import Products from './pages/Products'
 import Subscriptions from './pages/Subscriptions'
 import Deliveries from './pages/Deliveries'
 import Cart from './pages/Cart'
+import CheckoutPayment from './pages/CheckoutPayment'
+import CheckoutComplete from './pages/CheckoutComplete'
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/deliveries" element={<Deliveries />} />
           <Route path="/cart" element={<Cart />} />
+          <Route path="/checkout/payment" element={<CheckoutPayment />} />
+          <Route path="/checkout/complete" element={<CheckoutComplete />} />
         </Routes>
       </BrowserRouter>
     </CartProvider>
