@@ -231,6 +231,7 @@ def check_delivery_zone(pincode):
 
 	return {
 		"zone_found": True,
+		"name": zone.name,
 		"territory": zone.territory,
 		"shipping_rule": zone.shipping_rule,
 		"delivery_charge": delivery_charge,
@@ -244,10 +245,12 @@ def check_delivery_zone(pincode):
 
 
 @frappe.whitelist()
-def create_payment_request(sales_order):
-	"""Start a Razorpay checkout for a Sales Order, entirely via the standard
-	Payment Request -> Payments app machinery -- this just repackages its
-	output as JSON for the SPA.
+def create_payment_request(reference_doctype, reference_name):
+	"""Start a Razorpay checkout for a Sales Order or Sales Invoice (the
+	latter is what a Subscription's billing cycle generates -- see
+	list_my_subscription_invoices()), entirely via the standard Payment
+	Request -> Payments app machinery. This just repackages its output as
+	JSON for the SPA.
 
 	erpnext.accounts.doctype.payment_request.payment_request.make_payment_request
 	does most of the real work: it creates + submits the Payment Request and
@@ -291,8 +294,8 @@ def create_payment_request(sales_order):
 	existing_name = frappe.db.get_value(
 		"Payment Request",
 		{
-			"reference_doctype": "Sales Order",
-			"reference_name": sales_order,
+			"reference_doctype": reference_doctype,
+			"reference_name": reference_name,
 			"docstatus": 1,
 			"status": ["in", ["Draft", "Requested", "Initiated"]],
 		},
@@ -303,8 +306,8 @@ def create_payment_request(sales_order):
 		payment_request = frappe.get_doc("Payment Request", existing_name)
 	else:
 		payment_request = make_payment_request(
-			dt="Sales Order",
-			dn=sales_order,
+			dt=reference_doctype,
+			dn=reference_name,
 			submit_doc=1,
 			return_doc=1,
 			mute_email=1,
@@ -351,7 +354,10 @@ def _razorpay_order_integration_request(payment_request):
 			return frappe.get_doc("Integration Request", row.name)
 
 	ref = frappe.db.get_value(
-		"Sales Order", payment_request.reference_name, ["company", "customer_name"], as_dict=True
+		payment_request.reference_doctype,
+		payment_request.reference_name,
+		["company", "customer_name"],
+		as_dict=True,
 	)
 	controller = frappe.get_doc("Razorpay Settings")
 	controller.validate_transaction_currency(payment_request.currency)
@@ -371,3 +377,186 @@ def _razorpay_order_integration_request(payment_request):
 	if not token:
 		frappe.throw(_("Could not start Razorpay checkout for this order."))
 	return frappe.get_doc("Integration Request", token)
+
+
+# ---- Subscriptions (standard Subscription doctype + delivery_zone/is_paused/
+# pause_from/pause_to Custom Fields added via Customize Form -- no new doctype) ----
+
+
+@frappe.whitelist()
+def create_subscription(item, plan, delivery_zone, start_date):
+	"""Creates a standard Subscription for the logged-in user's Customer,
+	using webshop's own get_party() to resolve (or create) that Customer --
+	the same helper the cart already relies on for get_cart_quotation(), so
+	a subscription lands on the identical Customer record as any cart order
+	placed by this user.
+
+	`item` is only a sanity check against the plan's own linked item: a
+	Subscription Plan already carries its own Item and price (see Task A),
+	so the actual subscription line is driven entirely by `plan`.
+
+	Only creates the Subscription + its standard billing schedule (ERPNext's
+	own before_insert/after_insert already populate current_invoice_start/
+	end and generate the first invoice if start_date has passed). Does NOT
+	generate deliveries -- that scheduler is a separate, later pass."""
+	from webshop.webshop.shopping_cart.cart import get_party
+
+	plan_item = frappe.db.get_value("Subscription Plan", plan, "item")
+	if not plan_item:
+		frappe.throw(_("Subscription Plan {0} not found.").format(plan))
+	if plan_item != item:
+		frappe.throw(_("Item {0} does not match plan {1}.").format(item, plan))
+
+	if not frappe.db.exists("Delivery Zone", delivery_zone):
+		frappe.throw(_("Delivery Zone {0} not found.").format(delivery_zone))
+
+	party = get_party()
+	if not party or party.doctype != "Customer":
+		frappe.throw(_("Subscriptions are only available to customers."))
+
+	sub = frappe.get_doc(
+		{
+			"doctype": "Subscription",
+			"party_type": "Customer",
+			"party": party.name,
+			"start_date": start_date,
+			"delivery_zone": delivery_zone,
+			"plans": [{"plan": plan, "qty": 1}],
+		}
+	)
+	sub.insert(ignore_permissions=True)
+	return {"name": sub.name, "status": sub.status, "delivery_zone": sub.delivery_zone}
+
+
+@frappe.whitelist()
+def list_my_subscriptions():
+	"""The logged-in Customer's own Subscriptions.
+
+	`next_invoice_date` below is Subscription's own `current_invoice_end`
+	field -- standard Subscription has no field literally named "next
+	invoice date"; current_invoice_end is what represents the end of the
+	current billing period / when the next invoice fires (see
+	erpnext.accounts.doctype.subscription.subscription's
+	_next_invoice_trigger_date)."""
+	from webshop.webshop.shopping_cart.cart import get_party
+
+	party = get_party()
+	if not party or party.doctype != "Customer":
+		return []
+
+	rows = frappe.get_all(
+		"Subscription",
+		filters={"party_type": "Customer", "party": party.name},
+		fields=[
+			"name",
+			"status",
+			"delivery_zone",
+			"is_paused",
+			"pause_from",
+			"pause_to",
+			"current_invoice_end",
+			"start_date",
+		],
+		order_by="creation desc",
+	)
+
+	for row in rows:
+		plan_rows = frappe.get_all(
+			"Subscription Plan Detail", filters={"parent": row.name}, fields=["plan"], limit=1
+		)
+		plan_detail = frappe.db.get_value(
+			"Subscription Plan", plan_rows[0].plan, ["plan_name", "item"], as_dict=True
+		) if plan_rows else None
+		row["plan_name"] = plan_detail.plan_name if plan_detail else None
+		row["item"] = plan_detail.item if plan_detail else None
+		row["next_invoice_date"] = row.pop("current_invoice_end")
+
+	return rows
+
+
+def _get_owned_subscription(name):
+	"""Shared ownership check for pause/resume -- only the Customer that
+	owns this Subscription (per webshop's own get_party()) may modify it."""
+	from webshop.webshop.shopping_cart.cart import get_party
+
+	sub = frappe.get_doc("Subscription", name)
+	party = get_party()
+	if not party or sub.party_type != "Customer" or sub.party != party.name:
+		frappe.throw(_("You do not have permission to modify this subscription."), frappe.PermissionError)
+	return sub
+
+
+@frappe.whitelist()
+def pause_subscription(name, pause_from, pause_to):
+	"""Sets is_paused + the pause window on the caller's own Subscription.
+	Deliberately does not touch ERPNext's own status/invoicing fields --
+	skipping/pausing actual billing and delivery generation is the
+	out-of-scope scheduler pass; this only records the pause intent."""
+	sub = _get_owned_subscription(name)
+	sub.is_paused = 1
+	sub.pause_from = pause_from
+	sub.pause_to = pause_to
+	sub.save(ignore_permissions=True)
+	return {
+		"name": sub.name,
+		"is_paused": sub.is_paused,
+		"pause_from": str(sub.pause_from),
+		"pause_to": str(sub.pause_to),
+	}
+
+
+@frappe.whitelist()
+def resume_subscription(name):
+	"""Clears is_paused + the pause window on the caller's own Subscription."""
+	sub = _get_owned_subscription(name)
+	sub.is_paused = 0
+	sub.pause_from = None
+	sub.pause_to = None
+	sub.save(ignore_permissions=True)
+	return {"name": sub.name, "is_paused": sub.is_paused}
+
+
+@frappe.whitelist(allow_guest=True)
+def list_subscription_plans():
+	"""The 3 storefront-facing Subscription Plans (standard Subscription
+	Plan doctype has no Guest/Customer read permission by default, so the
+	product-card grid needs this the same way get_category_summary() exists
+	for Website Item / Item Group)."""
+	return frappe.get_all(
+		"Subscription Plan",
+		fields=["name", "plan_name", "item", "cost", "currency", "billing_interval"],
+		order_by="billing_interval asc",
+	)
+
+
+@frappe.whitelist()
+def list_my_subscription_invoices():
+	"""Sales Invoices generated by the logged-in Customer's own Subscriptions
+	(Subscription's after_insert()/process() already creates these via
+	ERPNext's standard billing-cycle logic -- nothing custom generates them).
+
+	Scoped to `subscription is set` so this only ever surfaces subscription
+	billing, not one-time Cart orders (which stay on Sales Order and are
+	paid via the existing Cart -> Sales Order -> create_payment_request
+	flow, unrelated to this)."""
+	from webshop.webshop.shopping_cart.cart import get_party
+
+	party = get_party()
+	if not party or party.doctype != "Customer":
+		return []
+
+	return frappe.get_all(
+		"Sales Invoice",
+		filters={"customer": party.name, "subscription": ["is", "set"], "docstatus": 1},
+		fields=[
+			"name",
+			"subscription",
+			"status",
+			"grand_total",
+			"outstanding_amount",
+			"currency",
+			"posting_date",
+			"due_date",
+		],
+		order_by="posting_date desc",
+	)

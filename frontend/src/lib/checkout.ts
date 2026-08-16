@@ -5,6 +5,9 @@ import { api } from './api'
 // Wraps the standard Payment Request -> Razorpay flow (erpnext's
 // make_payment_request + Payments app's RazorpaySettings), repackaged as
 // JSON instead of a redirect -- see ib_flora/api.py:create_payment_request.
+// Works against either a Sales Order (one-time Cart checkout) or a Sales
+// Invoice (a Subscription's billing-cycle invoice) -- both are in ERPNext's
+// own ALLOWED_DOCTYPES_FOR_PAYMENT_REQUEST.
 
 export interface RazorpayCheckoutParams {
   payment_request: string
@@ -20,9 +23,13 @@ export interface RazorpayCheckoutParams {
   prefill: { name?: string; email?: string }
 }
 
-export async function createPaymentRequest(salesOrder: string): Promise<RazorpayCheckoutParams> {
+export async function createPaymentRequest(
+  referenceDoctype: 'Sales Order' | 'Sales Invoice',
+  referenceName: string,
+): Promise<RazorpayCheckoutParams> {
   const { data } = await api.post('/method/ib_flora.api.create_payment_request', {
-    sales_order: salesOrder,
+    reference_doctype: referenceDoctype,
+    reference_name: referenceName,
   })
   return data.message
 }
@@ -67,16 +74,15 @@ export async function confirmRazorpayPayment(
 //
 // Deliberately not trusting that Razorpay's success callback firing in the
 // browser means payment actually landed -- confirms it by reading the
-// Sales Order and any submitted Payment Entry referencing it, both via
-// Frappe's own generic, already-whitelisted client API (no custom endpoint
-// needed for this part).
+// Sales Order/Sales Invoice and any submitted Payment Entry referencing it,
+// both via Frappe's own generic, already-whitelisted client API (no custom
+// endpoint needed for this part).
 
 export interface OrderPaymentStatus {
-  salesOrder: {
+  order: {
     name: string
     status: string
     grand_total: number
-    advance_paid: number
     currency: string
   } | null
   paymentEntries: {
@@ -87,21 +93,24 @@ export interface OrderPaymentStatus {
   }[]
 }
 
-export async function getOrderPaymentStatus(salesOrder: string): Promise<OrderPaymentStatus> {
-  const [soRes, peRes] = await Promise.all([
+export async function getOrderPaymentStatus(
+  referenceDoctype: 'Sales Order' | 'Sales Invoice',
+  referenceName: string,
+): Promise<OrderPaymentStatus> {
+  const [orderRes, peRes] = await Promise.all([
     api.get('/method/frappe.client.get_value', {
       params: {
-        doctype: 'Sales Order',
-        filters: JSON.stringify({ name: salesOrder }),
-        fieldname: JSON.stringify(['name', 'status', 'grand_total', 'advance_paid', 'currency']),
+        doctype: referenceDoctype,
+        filters: JSON.stringify({ name: referenceName }),
+        fieldname: JSON.stringify(['name', 'status', 'grand_total', 'currency']),
       },
     }),
     api.get('/method/frappe.client.get_list', {
       params: {
         doctype: 'Payment Entry',
         filters: JSON.stringify([
-          ['Payment Entry Reference', 'reference_doctype', '=', 'Sales Order'],
-          ['Payment Entry Reference', 'reference_name', '=', salesOrder],
+          ['Payment Entry Reference', 'reference_doctype', '=', referenceDoctype],
+          ['Payment Entry Reference', 'reference_name', '=', referenceName],
           ['Payment Entry', 'docstatus', '=', 1],
         ]),
         fields: JSON.stringify(['name', 'paid_amount', 'posting_date', 'status']),
@@ -110,7 +119,7 @@ export async function getOrderPaymentStatus(salesOrder: string): Promise<OrderPa
   ])
 
   return {
-    salesOrder: soRes.data.message ?? null,
+    order: orderRes.data.message ?? null,
     paymentEntries: peRes.data.message ?? [],
   }
 }

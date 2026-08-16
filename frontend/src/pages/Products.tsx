@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { Star, Flower2, Leaf } from 'lucide-react'
+import { Star, Flower2, Leaf, Truck, ShieldCheck, Headphones } from 'lucide-react'
 import Header from '../components/Header'
 import ReviewModal from '../components/ReviewModal'
 import FeatureBadges from '../components/products/FeatureBadges'
@@ -401,22 +401,53 @@ export default function Products() {
         )}
       </main>
 
-      <div className="mt-4 bg-emerald-50/60 px-6 py-8 lg:px-10">
-        <div className="mx-auto grid w-full max-w-[1920px] grid-cols-2 gap-6 sm:grid-cols-4">
-          {[
-            { icon: '🌿', title: '100% Fresh', subtitle: 'Handpicked with care' },
-            { icon: '🚚', title: 'On-Time Delivery', subtitle: 'Right to your doorstep' },
-            { icon: '🛡️', title: 'Secure Payment', subtitle: '100% safe & secure' },
-            { icon: '🎧', title: 'Customer Support', subtitle: "We're here to help" },
-          ].map((badge) => (
-            <div key={badge.title} className="flex items-center gap-3">
-              <span className="text-2xl">{badge.icon}</span>
-              <div>
-                <p className="font-medium text-slate-900">{badge.title}</p>
-                <p className="text-sm text-slate-500">{badge.subtitle}</p>
+      <div className="mx-auto mt-4 w-full max-w-[1920px] px-3 lg:px-6">
+        <div className="relative overflow-hidden rounded-3xl border border-emerald-100/70 bg-gradient-to-b from-emerald-50/70 to-white shadow-sm">
+          <div className="grid grid-cols-2 divide-y divide-emerald-100/70 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+            {[
+              {
+                icon: Leaf,
+                title: '100% Fresh',
+                subtitle: 'Farm fresh flowers, handpicked for you',
+                iconBg: 'bg-emerald-100',
+                iconColor: 'text-emerald-600',
+              },
+              {
+                icon: Truck,
+                title: 'Same Day Delivery',
+                subtitle: 'On-time delivery, every time',
+                iconBg: 'bg-orange-100',
+                iconColor: 'text-orange-600',
+              },
+              {
+                icon: ShieldCheck,
+                title: 'Secure Payment',
+                subtitle: '100% secure payments protected',
+                iconBg: 'bg-blue-100',
+                iconColor: 'text-blue-600',
+              },
+              {
+                icon: Headphones,
+                title: '24/7 Support',
+                subtitle: "We're here to help you anytime",
+                iconBg: 'bg-slate-200',
+                iconColor: 'text-slate-700',
+              },
+            ].map((badge) => (
+              <div key={badge.title} className="flex items-center gap-3 px-5 py-6 sm:px-6">
+                <span
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${badge.iconBg}`}
+                >
+                  <badge.icon className={`h-5 w-5 ${badge.iconColor}`} strokeWidth={2} aria-hidden />
+                </span>
+                <div>
+                  <p className="font-semibold text-emerald-900">{badge.title}</p>
+                  <p className="text-sm text-slate-500">{badge.subtitle}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="h-1 w-full bg-gradient-to-r from-emerald-700 via-emerald-500 to-emerald-700" />
         </div>
       </div>
 

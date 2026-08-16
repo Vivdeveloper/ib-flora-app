@@ -45,7 +45,8 @@ function loadRazorpayScript(): Promise<void> {
 export default function CheckoutPayment() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const salesOrder = searchParams.get('so')
+  const referenceDoctype = searchParams.get('rd') as 'Sales Order' | 'Sales Invoice' | null
+  const referenceName = searchParams.get('rn')
 
   const [params, setParams] = useState<RazorpayCheckoutParams | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +54,7 @@ export default function CheckoutPayment() {
   const preparePromiseRef = useRef<Promise<[RazorpayCheckoutParams, void]> | null>(null)
 
   useEffect(() => {
-    if (!salesOrder) {
+    if (!referenceDoctype || !referenceName) {
       setError('No order to pay for.')
       return
     }
@@ -72,7 +73,7 @@ export default function CheckoutPayment() {
     // that's the only invocation allowed to run, nothing ever updates state.
     if (!preparePromiseRef.current) {
       preparePromiseRef.current = Promise.all([
-        createPaymentRequest(salesOrder),
+        createPaymentRequest(referenceDoctype, referenceName),
         loadRazorpayScript(),
       ])
     }
@@ -88,7 +89,7 @@ export default function CheckoutPayment() {
     return () => {
       cancelled = true
     }
-  }, [salesOrder])
+  }, [referenceDoctype, referenceName])
 
   // Fetching params happens in the background as soon as the page loads, but
   // rzp.open() only ever runs inside this direct click handler -- some
@@ -111,7 +112,9 @@ export default function CheckoutPayment() {
         setConfirming(true)
         try {
           await confirmRazorpayPayment(params, response)
-          navigate(`/checkout/complete?so=${encodeURIComponent(salesOrder as string)}`)
+          navigate(
+            `/checkout/complete?rd=${encodeURIComponent(referenceDoctype as string)}&rn=${encodeURIComponent(referenceName as string)}`,
+          )
         } catch (err) {
           setError(extractErrorMessage(err))
         } finally {
@@ -148,7 +151,7 @@ export default function CheckoutPayment() {
             </h1>
             {params && (
               <p className="mt-2 text-sm text-slate-500">
-                {formatCurrency(params.amount / 100)} for order {salesOrder}
+                {formatCurrency(params.amount / 100)} for {referenceName}
               </p>
             )}
 

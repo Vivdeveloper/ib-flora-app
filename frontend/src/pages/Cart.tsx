@@ -156,7 +156,7 @@ export default function Cart() {
       }
 
       const salesOrder = await placeOrder()
-      navigate(`/checkout/payment?so=${encodeURIComponent(salesOrder)}`)
+      navigate(`/checkout/payment?rd=Sales%20Order&rn=${encodeURIComponent(salesOrder)}`)
     } catch (err) {
       setCheckoutError(extractErrorMessage(err))
     } finally {

@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Receipt, CircleCheck } from 'lucide-react'
+import { Receipt, CircleCheck, CreditCard } from 'lucide-react'
 import Header from '../components/Header'
 import Breadcrumb from '../components/cart/Breadcrumb'
 import { useCart } from '../lib/CartContext'
 import { getMyOrders, getMyPayments, type MyOrder, type MyPayment } from '../lib/account'
+import { getMySubscriptionInvoices, type MySubscriptionInvoice } from '../lib/subscriptions'
 import { formatCurrency } from '../lib/format'
 
 export default function Transactions() {
   const { loggedIn } = useCart()
   const [orders, setOrders] = useState<MyOrder[]>([])
   const [payments, setPayments] = useState<MyPayment[]>([])
+  const [invoices, setInvoices] = useState<MySubscriptionInvoice[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -18,11 +20,13 @@ export default function Transactions() {
       setLoading(false)
       return
     }
-    getMyOrders()
-      .then(async (myOrders) => {
+    Promise.all([
+      getMyOrders().then(async (myOrders) => {
         setOrders(myOrders)
         setPayments(await getMyPayments(myOrders.map((o) => o.name)))
-      })
+      }),
+      getMySubscriptionInvoices().then(setInvoices),
+    ])
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [loggedIn])
@@ -49,34 +53,82 @@ export default function Transactions() {
 
         {loggedIn && loading && <p className="mt-8 text-slate-500">Loading transactions...</p>}
 
-        {loggedIn && !loading && orders.length === 0 && (
+        {loggedIn && !loading && orders.length === 0 && invoices.length === 0 && (
           <p className="mt-8 text-slate-500">No orders or payments yet.</p>
         )}
 
-        {loggedIn && !loading && orders.length > 0 && (
+        {loggedIn && !loading && (orders.length > 0 || invoices.length > 0) && (
           <div className="mt-6 space-y-8">
-            <section>
-              <h2 className="text-sm font-semibold text-slate-900">Orders</h2>
-              <div className="mt-3 space-y-2.5">
-                {orders.map((order) => (
-                  <div
-                    key={order.name}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4 shadow-sm"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                      <Receipt className="h-4 w-4" strokeWidth={2} aria-hidden />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-900">{order.name}</p>
-                      <p className="text-sm text-slate-500">
-                        {new Date(order.transaction_date).toLocaleDateString('en-IN')} · {order.status}
-                      </p>
+            {invoices.length > 0 && (
+              <section>
+                <h2 className="text-sm font-semibold text-slate-900">Subscription Invoices</h2>
+                <div className="mt-3 space-y-2.5">
+                  {invoices.map((invoice) => {
+                    const isPaid = invoice.outstanding_amount <= 0
+                    return (
+                      <div
+                        key={invoice.name}
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-100 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                          >
+                            <Receipt className="h-4 w-4" strokeWidth={2} aria-hidden />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-900">{invoice.name}</p>
+                            <p className="text-sm text-slate-500">
+                              {new Date(invoice.posting_date).toLocaleDateString('en-IN')} · For {invoice.subscription}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-sm font-medium text-slate-900">{formatCurrency(invoice.grand_total)}</p>
+                          {isPaid ? (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                              Paid
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/checkout/payment?rd=Sales%20Invoice&rn=${encodeURIComponent(invoice.name)}`}
+                              className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-800"
+                            >
+                              <CreditCard className="h-3.5 w-3.5" aria-hidden /> Pay Now
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {orders.length > 0 && (
+              <section>
+                <h2 className="text-sm font-semibold text-slate-900">Orders</h2>
+                <div className="mt-3 space-y-2.5">
+                  {orders.map((order) => (
+                    <div
+                      key={order.name}
+                      className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4 shadow-sm"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                        <Receipt className="h-4 w-4" strokeWidth={2} aria-hidden />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900">{order.name}</p>
+                        <p className="text-sm text-slate-500">
+                          {new Date(order.transaction_date).toLocaleDateString('en-IN')} · {order.status}
+                        </p>
+                      </div>
+                      <p className="text-sm font-medium text-slate-900">{formatCurrency(order.grand_total)}</p>
                     </div>
-                    <p className="text-sm font-medium text-slate-900">{formatCurrency(order.grand_total)}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section>
               <h2 className="text-sm font-semibold text-slate-900">Payments</h2>

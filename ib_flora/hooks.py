@@ -5,6 +5,16 @@ app_description = "Custom backend app for IB Flora flower delivery business"
 app_email = "sarfarazkhan1101@gmail.com"
 app_license = "mit"
 
+# Fixtures
+# ------------------
+
+# Custom Fields added to standard doctypes (Subscription's delivery_zone/
+# is_paused/pause_from/pause_to) -- exported so they travel with the app
+# instead of only existing as live DB records on this one site.
+fixtures = [
+	{"dt": "Custom Field", "filters": [["dt", "in", ["Subscription"]]]},
+]
+
 # Apps
 # ------------------
 

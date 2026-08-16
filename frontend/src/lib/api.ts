@@ -36,6 +36,7 @@ api.interceptors.request.use(async (config) => {
 
 export interface DeliveryZoneCheck {
   zone_found: boolean
+  name?: string
   territory?: string
   shipping_rule?: string
   delivery_charge?: number
